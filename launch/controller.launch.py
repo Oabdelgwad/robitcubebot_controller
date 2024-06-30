@@ -1,19 +1,16 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, GroupAction, OpaqueFunction, LogInfo
 from launch_ros.actions import Node
 from launch.substitutions import LaunchConfiguration
 from launch.conditions import UnlessCondition, IfCondition
 
-# Define the noisy_controller function
 def noisy_controller(context, *args, **kwargs):
-    # Retrieving launch configurations
     use_python = LaunchConfiguration("use_python")
     wheel_radius = float(LaunchConfiguration("wheel_radius").perform(context))
     wheel_separation = float(LaunchConfiguration("wheel_separation").perform(context))
     wheel_radius_error = float(LaunchConfiguration("wheel_radius_error").perform(context))
     wheel_separation_error = float(LaunchConfiguration("wheel_separation_error").perform(context))
 
-    # Node definitions for Python and C++ versions
     noisy_controller_py = Node(
         package="robitcubebot_controller",
         executable="noisy_controller.py",
@@ -37,9 +34,7 @@ def noisy_controller(context, *args, **kwargs):
         noisy_controller_cpp,
     ]
 
-# Define the launch description
 def generate_launch_description():
-    # Declare launch arguments
     use_simple_controller_arg = DeclareLaunchArgument(
         "use_simple_controller",
         default_value="True",
@@ -70,14 +65,12 @@ def generate_launch_description():
         default_value="0.02",
         description="Error margin for wheel separation.",
     )
-    
-    # Define launch configurations
+
     use_simple_controller = LaunchConfiguration("use_simple_controller")
     use_python = LaunchConfiguration("use_python")
     wheel_radius = LaunchConfiguration("wheel_radius")
     wheel_separation = LaunchConfiguration("wheel_separation")
 
-    # Define nodes
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -86,17 +79,33 @@ def generate_launch_description():
             "--controller-manager",
             "/controller_manager",
         ],
+        output='screen'
     )
 
     wheel_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
         arguments=[
-            "robitcubebot_controller",  # Add package name here
+            "robitcubebot_controller",
             "--controller-manager",
             "/controller_manager",
         ],
         condition=UnlessCondition(use_simple_controller),
+        output='screen'
+    )
+
+    lifter_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=[
+            "lifter_controller",
+            "--controller-manager",
+            "/controller_manager",
+        ],
+        output='screen',
+        remappings=[
+            ('/controller_manager/spawner', '/spawner_lifter_controller')
+        ]
     )
 
     simple_controller = GroupAction(
@@ -109,7 +118,8 @@ def generate_launch_description():
                     "simple_velocity_controller",
                     "--controller-manager",
                     "/controller_manager"
-                ]
+                ],
+                output='screen'
             ),
             Node(
                 package="robitcubebot_controller",
@@ -130,9 +140,9 @@ def generate_launch_description():
         ]
     )
 
+
     noisy_controller_launch = OpaqueFunction(function=noisy_controller)
 
-    # Return the launch description
     return LaunchDescription(
         [
             use_simple_controller_arg,
@@ -141,9 +151,15 @@ def generate_launch_description():
             wheel_separation_arg,
             wheel_radius_error_arg,
             wheel_separation_error_arg,
+            LogInfo(msg="Starting Joint State Broadcaster..."),
             joint_state_broadcaster_spawner,
+            LogInfo(msg="Starting Wheel Controller..."),
             wheel_controller_spawner,
+            LogInfo(msg="Starting Simple Controller..."),
             simple_controller,
+            LogInfo(msg="Starting Noisy Controller..."),
             noisy_controller_launch,
+            LogInfo(msg="Starting Lifter Controller..."),
+            lifter_controller_spawner,
         ]
     )
